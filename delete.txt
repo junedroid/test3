@@ -1,0 +1,225 @@
+import android.annotation.SuppressLint;
+import android.app.Activity;
+import android.app.Dialog;
+import android.app.PendingIntent;
+import android.content.ContentResolver;
+import android.content.ContentValues;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentSender;
+import android.database.Cursor;
+import android.graphics.drawable.Drawable;
+import android.net.Uri;
+import android.os.Build;
+import android.provider.MediaStore;
+import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.IntentSenderRequest;
+import androidx.core.content.FileProvider;
+import androidx.recyclerview.widget.RecyclerView;
+
+import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.DataSource;
+import com.bumptech.glide.load.engine.GlideException;
+import com.bumptech.glide.request.BaseRequestOptions;
+import com.bumptech.glide.request.RequestListener;
+import com.bumptech.glide.request.RequestOptions;
+import com.bumptech.glide.request.target.Target;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+
+import com.example.armymanphotoeditor.R;
+import com.example.armymanphotoeditor.activity.ShareActivity;
+import com.my.sdclass.AppManage;
+import com.my.sdclass.MyCallback;
+
+public class PhotoAdapter extends RecyclerView.Adapter<PhotoAdapter.PhotoViewHolder> {
+    private final Activity context;
+    ArrayList<String> list_theme;
+    private OnItemClickListener onItemClickListener;
+    public String uri;
+    ActivityResultLauncher activityResultLauncher;
+
+    public interface OnItemClickListener {
+        void onClick();
+    }
+
+    public PhotoAdapter(Activity context, ArrayList<String> arrayList, ActivityResultLauncher activityResultLauncher) {
+        new ArrayList();
+        this.context = context;
+        this.list_theme = arrayList;
+        this.activityResultLauncher = activityResultLauncher;
+    }
+
+    @Override
+    public PhotoViewHolder onCreateViewHolder(ViewGroup viewGroup, int i) {
+        return new PhotoViewHolder(LayoutInflater.from(viewGroup.getContext()).inflate(R.layout.item_creation, viewGroup, false));
+    }
+
+    public void onBindViewHolder(PhotoViewHolder photoViewHolder, final int i) {
+        File file = new File(this.list_theme.get(i));
+        Glide.with(this.context).load(this.list_theme.get(i)).apply((BaseRequestOptions<?>) new RequestOptions().dontAnimate().skipMemoryCache(true)).listener(new RequestListener<Drawable>() {
+            @Override
+            public boolean onLoadFailed(GlideException glideException, Object obj, Target<Drawable> target, boolean z) {
+                return false;
+            }
+
+            public boolean onResourceReady(Drawable drawable, Object obj, Target<Drawable> target, DataSource dataSource, boolean z) {
+                return false;
+            }
+        }).into(photoViewHolder.themeimg);
+
+        photoViewHolder.itemView.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                PhotoAdapter photoAdapter = PhotoAdapter.this;
+                photoAdapter.CallIntent(photoAdapter.list_theme.get(i));
+            }
+        });
+        photoViewHolder.textView1.setText(this.list_theme.get(i).substring(this.list_theme.get(i).lastIndexOf("/") + 1));
+        photoViewHolder.ivdelete.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                final Dialog dialog = new Dialog(PhotoAdapter.this.context, R.style.UploadDialog);
+                dialog.setContentView(R.layout.dialog_delete_photo);
+                dialog.setCancelable(false);
+                dialog.show();
+                dialog.getWindow().setLayout(-1, -2);
+                ((FrameLayout) dialog.findViewById(R.id.btn_yes)).setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View view2) {
+                        dialog.dismiss();
+                        uri = PhotoAdapter.this.list_theme.get(i);
+                        Log.d("que..e", "onClick: " + uri);
+                        delete(file, activityResultLauncher, i);
+                        PhotoAdapter.this.notifyDataSetChanged();
+                        PhotoAdapter.this.onItemClickListener.onClick();
+                    }
+                });
+                ((FrameLayout) dialog.findViewById(R.id.btn_no)).setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View view2) {
+                        dialog.dismiss();
+                    }
+                });
+            }
+        });
+    }
+
+
+    public void delete(File f, ActivityResultLauncher launcher, int pos) {
+        Uri uri1 = FileProvider.getUriForFile(context, context.getPackageName() + ".provider", f);
+        boolean deleted = f.delete();
+        try {
+            if (deleted) {
+                context.getContentResolver()
+                        .delete(uri1, null, null);
+                Toast.makeText(context, "Delete Success", Toast.LENGTH_SHORT).show();
+                notifyDataSetChanged();
+                list_theme.remove(pos);
+            } else {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    delete1(f, launcher);
+                } else {
+                    Toast.makeText(context, "Photo Deleted Fail", Toast.LENGTH_SHORT).show();
+                }
+
+            }
+        } catch (Exception e) {
+            android.util.Log.e("TAG111", "deleteClick::::: " + e.getMessage());
+        }
+    }
+
+    private void delete1(File f, ActivityResultLauncher launcher) {
+
+        Uri rr = getImageContentUri(context, f);
+        if (rr == null) {
+            Toast.makeText(context, "null", Toast.LENGTH_SHORT).show();
+        } else {
+            ContentResolver contentResolver = context.getContentResolver();
+            try {
+                contentResolver.delete(rr, null, null);
+            } catch (SecurityException e) {
+                PendingIntent pendingIntent = null;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    ArrayList<Uri> collection = new ArrayList<>();
+                    collection.add(rr);
+                    pendingIntent = MediaStore.createDeleteRequest(contentResolver, collection);
+                }
+                if (pendingIntent != null) {
+                    IntentSender sender = pendingIntent.getIntentSender();
+                    IntentSenderRequest request = new IntentSenderRequest.Builder(sender).build();
+                    launcher.launch(request);
+                }
+            }
+        }
+    }
+
+
+    public static Uri getImageContentUri(Context context, File imageFile) {
+        String filePath = imageFile.getAbsolutePath();
+        Cursor cursor = context.getContentResolver().query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, new String[]{MediaStore.Images.Media._ID},
+                MediaStore.Images.Media.DATA + "=? ",
+                new String[]{filePath}, null);
+
+        if (cursor != null && cursor.moveToFirst()) {
+            @SuppressLint("Range") int id = cursor.getInt(cursor
+                    .getColumnIndex(MediaStore.MediaColumns._ID));
+            Uri baseUri = Uri.parse("content://media/external/images/media");
+            return Uri.withAppendedPath(baseUri, "" + id);
+        } else {
+            if (imageFile.exists()) {
+                ContentValues values = new ContentValues();
+                values.put(MediaStore.Images.Media.DATA, filePath);
+                return context.getContentResolver().insert(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+            } else {
+                return null;
+            }
+        }
+    }
+
+    @Override
+    public int getItemCount() {
+        return this.list_theme.size();
+    }
+
+    public class PhotoViewHolder extends RecyclerView.ViewHolder {
+        ImageView ivdelete;
+        TextView textView1;
+        ImageView themeimg;
+
+        public PhotoViewHolder(View view) {
+            super(view);
+            this.themeimg = (ImageView) view.findViewById(R.id.imageView1);
+            this.ivdelete = (ImageView) view.findViewById(R.id.ivdelete);
+            this.textView1 = (TextView) view.findViewById(R.id.textView1);
+            textView1.setSelected(true);
+        }
+    }
+
+    public void CallIntent(String str) {
+        AppManage.getInstance(context).inScreen(context, new MyCallback() {
+            public void callbackCall() {
+                Intent intent = new Intent(context, ShareActivity.class);
+                intent.putExtra("imageToShare-uri", str);
+                context.startActivity(intent);
+            }
+        }, AppManage.go);
+
+    }
+
+    public void setClickListener(OnItemClickListener onItemClickListener) {
+        this.onItemClickListener = onItemClickListener;
+    }
+}
